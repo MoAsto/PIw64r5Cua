@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<style>:root{padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}*{box-sizing:border-box}</style>
+<title>団子屋 販売記録</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: one-column phone tool. Indigo summary block on top, six big tap rows, then the recent log and price settings. */
+:root {
+  --bg: #eceff4;
+  --surface: #ffffff;
+  --ink: #192038;
+  --muted: #5d667f;
+  --line: #d5dae5;
+  --line-strong: #aab2c6;
+  --accent: #2b4290;
+  --accent-ink: #ffffff;
+  --band-bg: #24367a;
+  --band-fg: #ffffff;
+  --band-sub: #b9c5ee;
+  --ok: #2f7d4f;
+  --warn: #b26a12;
+  --f-plain: #f4ead2;
+  --f-mitarashi: #a9672b;
+  --f-goma: #2b2a2e;
+  --f-anko: #7b2e40;
+  --f-matcha: #86ab55;
+  --f-choco: #4b2c20;
+  --f-kinako: #d6b072;
+  --f-shoyu: #6a3b20;
+  --stick: #c9a56b;
+  --font-display: 'Dela Gothic One', 'Zen Kaku Gothic New', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  --font-body: 'Zen Kaku Gothic New', 'Hiragino Sans', 'Noto Sans JP', 'Yu Gothic', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10131d; --surface: #1a1f2f; --ink: #e9edf8; --muted: #97a0ba;
+    --line: #2b3248; --line-strong: #4a5473;
+    --accent: #9db3f5; --accent-ink: #0e1530;
+    --band-bg: #202b57; --band-fg: #f1f4ff; --band-sub: #a9b6e6;
+    --ok: #6cc590; --warn: #e5a653;
+    --f-goma: #6e6c75; --f-anko: #a04a5e; --f-choco: #7a4a38; --f-mitarashi: #c58340; --f-matcha: #8fb35e; --f-kinako: #dcb97f; --f-shoyu: #a1673c;
+    --stick: #8a7550;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10131d; --surface: #1a1f2f; --ink: #e9edf8; --muted: #97a0ba;
+  --line: #2b3248; --line-strong: #4a5473;
+  --accent: #9db3f5; --accent-ink: #0e1530;
+  --band-bg: #202b57; --band-fg: #f1f4ff; --band-sub: #a9b6e6;
+  --ok: #6cc590; --warn: #e5a653;
+  --f-goma: #6e6c75; --f-anko: #a04a5e; --f-choco: #7a4a38; --f-mitarashi: #c58340; --f-matcha: #8fb35e; --f-kinako: #dcb97f; --f-shoyu: #a1673c;
+  --stick: #8a7550;
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  padding-inline: 16px;
+  padding-block: 16px 48px;
+  -webkit-tap-highlight-color: transparent;
+}
+.app { max-width: 560px; margin-inline: auto; display: grid; gap: 16px; }
+button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* header */
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.top h1 { font-family: var(--font-display); font-weight: 400; font-size: 22px; line-height: 1.2; margin: 0; text-wrap: balance; }
+.top .date { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 999px; padding: 3px; background: var(--surface); }
+.seg button { border: 0; background: transparent; padding: 6px 14px; border-radius: 999px; font-size: 14px; font-weight: 500; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+/* summary */
+.band { background: var(--band-bg); color: var(--band-fg); border-radius: 14px; padding: 18px 20px; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.band .lab { font-size: 12px; letter-spacing: .12em; color: var(--band-sub); }
+.band .big { font-family: var(--font-display); font-size: clamp(36px, 11vw, 52px); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.band .mid { font-family: var(--font-display); font-size: 30px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.band > div:last-child { text-align: right; }
+
+.status { display: flex; align-items: center; gap: 8px; margin: -4px 0 0; font-size: 12.5px; color: var(--muted); }
+.status i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); flex: none; }
+.status[data-k="ok"] i { background: var(--ok); }
+.status[data-k="warn"] i { background: var(--warn); }
+
+/* item rows */
+.items { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.row { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; column-gap: 12px; align-items: center; }
+.skewer { width: 24px; height: 48px; display: block; }
+.skewer circle { fill: var(--c); stroke: var(--line-strong); stroke-width: 1; }
+.skewer .stick { stroke: var(--stick); stroke-width: 2.5; stroke-linecap: round; }
+.info { min-width: 0; }
+.nm { font-size: 17px; font-weight: 700; line-height: 1.3; }
+.sub { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ctl { display: flex; align-items: center; gap: 8px; }
+.n { font-family: var(--font-display); font-size: 30px; line-height: 1; min-width: 2.2ch; text-align: center; font-variant-numeric: tabular-nums; display: inline-block; transition: transform .15s ease; }
+.n.bump { transform: scale(1.25); }
+.plus { min-width: 60px; height: 56px; border-radius: 12px; border: 0; background: var(--accent); color: var(--accent-ink); font-size: 32px; font-weight: 700; line-height: 1; padding: 0; }
+.plus:active:not(:disabled) { transform: scale(.95); }
+.minus { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line-strong); background: transparent; font-size: 22px; line-height: 1; padding: 0; }
+.minus:active:not(:disabled) { background: var(--line); }
+.plus:disabled, .minus:disabled { opacity: .35; }
+.bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; margin-top: 10px; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 2px; transition: width .25s ease; }
+
+/* sections */
+h2 { font-size: 13px; font-weight: 700; letter-spacing: .1em; color: var(--muted); margin: 0 0 8px; }
+.log { list-style: none; margin: 0; padding: 0; display: grid; }
+.log li { display: grid; grid-template-columns: 3.4em minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.log li:last-child { border-bottom: 0; }
+.log .t { color: var(--muted); font-size: 13px; }
+.log button { border: 1px solid var(--line-strong); background: transparent; border-radius: 8px; padding: 4px 10px; font-size: 13px; }
+.log button:disabled { opacity: .35; }
+.empty { color: var(--muted); font-size: 14px; margin: 0; }
+
+details.prices { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 0 14px; }
+details.prices summary { padding: 14px 0; font-weight: 700; cursor: pointer; }
+.pgrid { display: grid; gap: 10px; padding-bottom: 6px; }
+.prow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.prow label { font-weight: 500; }
+.prow .field { display: inline-flex; align-items: center; gap: 6px; }
+.prow input { width: 96px; font: inherit; font-size: 16px; text-align: right; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--bg); color: var(--ink); font-variant-numeric: tabular-nums; }
+.note { font-size: 12.5px; color: var(--muted); margin: 4px 0 14px; }
+.confirm { display: grid; gap: 10px; background: var(--bg); border: 1px solid var(--line-strong); border-radius: 10px; padding: 12px; margin-top: 8px; }
+.confirm p { margin: 0; font-weight: 700; }
+.confirm-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.confirm-btns button { flex: 1 1 120px; padding: 10px 14px; border-radius: 10px; font-weight: 700; border: 1px solid var(--line-strong); background: transparent; }
+.confirm-btns .yes { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+.copy { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 10px; padding: 12px 16px; font-weight: 700; width: 100%; }
+#copybox { width: 100%; min-height: 9em; font: inherit; font-size: 14px; padding: 10px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--ink); margin-top: 8px; }
+
+.toast { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-size: 14px; max-width: calc(100vw - 32px); text-align: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .n, .bar i, .plus { transition: none; }
+  .plus:active:not(:disabled) { transform: none; }
+}
+</style>
+
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div>
+      <h1>団子屋 販売記録</h1>
+      <p class="date" id="date"></p>
+    </div>
+    <div class="seg" role="group" aria-label="集計する期間">
+      <button type="button" id="scope-today" aria-pressed="true">今日</button>
+      <button type="button" id="scope-all" aria-pressed="false">全日合計</button>
+    </div>
+  </header>
+
+  <section class="band" aria-label="合計">
+    <div>
+      <div class="lab">売上</div>
+      <div class="big" id="total-rev">¥0</div>
+    </div>
+    <div>
+      <div class="lab">販売数</div>
+      <div class="mid" id="total-n">0</div>
+    </div>
+  </section>
+  <p class="status" id="status" data-k=""><i></i><span>接続中…</span></p>
+
+  <ul class="items" id="items"></ul>
+
+  <section>
+    <h2>直近の記録</h2>
+    <ol class="log" id="log"></ol>
+    <p class="empty" id="log-empty">まだ記録がありません。上の「+」で販売を記録します。</p>
+  </section>
+
+  <details class="prices" id="prices">
+    <summary>価格を変更</summary>
+    <div class="pgrid" id="pgrid"></div>
+    <div class="confirm" id="pconfirm" role="alertdialog" aria-labelledby="pconfirm-msg" hidden>
+      <p id="pconfirm-msg"></p>
+      <div class="confirm-btns">
+        <button type="button" class="yes" id="pc-yes">変更する</button>
+        <button type="button" class="no" id="pc-no">やめる</button>
+      </div>
+    </div>
+    <p class="note">変更した価格は、これから記録する分から使われます。記録済みの売上は変わりません。</p>
+  </details>
+
+  <div>
+    <button type="button" class="copy" id="copy">集計をコピー</button>
+    <textarea id="copybox" readonly hidden aria-label="集計の文章"></textarea>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(function () {
+  var ITEMS = [
+    { id: 'plain', name: 'プレーン', price: 150, c: '--f-plain' },
+    { id: 'mitarashi', name: 'みたらし', price: 150, c: '--f-mitarashi' },
+    { id: 'kinako', name: 'きなこ', price: 150, c: '--f-kinako' },
+    { id: 'shoyu', name: '醤油', price: 150, c: '--f-shoyu' },
+    { id: 'anko', name: 'あんこ', price: 150, c: '--f-anko' },
+    { id: 'matcha', name: '抹茶', price: 150, c: '--f-matcha' },
+    { id: 'choco', name: 'チョコ', price: 150, c: '--f-choco' },
+    { id: 'goma', name: '胡麻団子', price: 200, c: '--f-goma' }
+  ];
+  var BY = {};
+  ITEMS.forEach(function (i) { BY[i.id] = i; });
+
+  var state = {
+    events: [],
+    priceLog: [],
+    prices: {},
+    scope: 'today',
+    canWrite: true,
+    mode: 'pending',
+    syncError: false
+  };
+  ITEMS.forEach(function (i) { state.prices[i.id] = i.price; });
+  try {
+    var saved = localStorage.getItem('dango-scope');
+    if (saved === 'all' || saved === 'today') state.scope = saved;
+  } catch (e) {}
+
+  var store = null;
+  var queue = [];
+  var prevCount = null;
+  var refs = {};
+
+  function $(s) { return document.querySelector(s); }
+  function yen(n) { return '¥' + Number(n).toLocaleString('ja-JP'); }
+  function startOfDay() { var d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
+  function hhmm(t) {
+    var d = new Date(t);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+
+  var toastTimer = null;
+  function toast(msg) {
+    var el = $('#toast');
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.hidden = true; }, 2600);
+  }
+
+  /* ---------- storage ---------- */
+
+  function cleanEvents(list) {
+    var out = [];
+    list.forEach(function (e) {
+      if (!e || !BY[e.item]) return;
+      var p = Number(e.price), t = Number(e.t);
+      if (!isFinite(p) || !isFinite(t)) return;
+      out.push({ id: String(e.id), item: e.item, price: Math.round(p), t: t });
+    });
+    out.sort(function (a, b) { return a.t - b.t || (a.id < b.id ? -1 : 1); });
+    return out;
+  }
+
+  function cleanPriceLog(list) {
+    var out = [];
+    (list || []).forEach(function (x) {
+      if (!x || !BY[x.item]) return;
+      var a = Number(x.from), b = Number(x.to), t = Number(x.t);
+      if (!isFinite(a) || !isFinite(b) || !isFinite(t)) return;
+      out.push({ id: String(x.id), item: x.item, from: Math.round(a), to: Math.round(b), t: t });
+    });
+    out.sort(function (p, q) { return p.t - q.t || (p.id < q.id ? -1 : 1); });
+    return out;
+  }
+
+  function applyPrices(p) {
+    if (!p || typeof p !== 'object') return;
+    ITEMS.forEach(function (i) {
+      var v = Number(p[i.id]);
+      if (isFinite(v) && v >= 0 && v <= 99999) state.prices[i.id] = Math.round(v);
+    });
+  }
+
+  function dbStore(db) {
+    var col = db.collection('sales');
+    var cfg = db.doc('config/prices');
+    return {
+      start: function (onEvents, onPrices, onError, onPriceLog) {
+        col.orderBy('t', 'asc').onSnapshot(function (snap) {
+          onEvents(snap.docs.map(function (d) {
+            var data = d.data() || {};
+            return { id: d.id, item: data.item, price: data.price, t: data.t };
+          }));
+        }, onError);
+        cfg.onSnapshot(function (s) { onPrices(s.exists ? s.data() : null); }, onError);
+        db.collection('pricelog').orderBy('t', 'asc').onSnapshot(function (snap) {
+          onPriceLog(snap.docs.map(function (d) {
+            var data = d.data() || {};
+            return { id: d.id, item: data.item, from: data.from, to: data.to, t: data.t };
+          }));
+        }, onError);
+      },
+      add: function (item, price, t) { return col.add({ item: item, price: price, t: t || Date.now() }); },
+      remove: function (id) { return col.doc(id).delete(); },
+      setPrices: function (p) { return cfg.set(p); },
+      logPrice: function (item, from, to) {
+        return db.collection('pricelog').add({ item: item, from: from, to: to, t: Date.now() });
+      }
+    };
+  }
+
+  function localStore() {
+    var KE = 'dango-sales-v1', KP = 'dango-prices-v1';
+    var events = [], prices = null, priceLog = [], onEv = function () {}, onPr = function () {};
+    try { priceLog = JSON.parse(localStorage.getItem('dango-pricelog-v1') || '[]'); } catch (e) {}
+    if (!Array.isArray(priceLog)) priceLog = [];
+    try { events = JSON.parse(localStorage.getItem(KE) || '[]'); } catch (e) {}
+    try { prices = JSON.parse(localStorage.getItem(KP) || 'null'); } catch (e) {}
+    if (!Array.isArray(events)) events = [];
+    function save() { try { localStorage.setItem(KE, JSON.stringify(events)); } catch (e) {} }
+    return {
+      start: function (onEvents, onPrices, onError, onPriceLog) {
+        onEv = onEvents; onPr = onPrices;
+        onPr(prices);
+        if (onPriceLog) onPriceLog(priceLog.slice());
+        onEv(events.slice());
+      },
+      add: function (item, price, t) {
+        events.push({ id: 'l' + Date.now() + Math.random().toString(36).slice(2, 6), item: item, price: price, t: t || Date.now() });
+        save();
+        onEv(events.slice());
+      },
+      remove: function (id) {
+        events = events.filter(function (e) { return e.id !== id; });
+        save();
+        onEv(events.slice());
+      },
+      setPrices: function (p) {
+        prices = p;
+        try { localStorage.setItem(KP, JSON.stringify(p)); } catch (e) {}
+      },
+      logPrice: function (item, from, to) {
+        priceLog.push({ id: 'p' + Date.now() + Math.random().toString(36).slice(2, 6), item: item, from: from, to: to, t: Date.now() });
+        try { localStorage.setItem('dango-pricelog-v1', JSON.stringify(priceLog)); } catch (e) {}
+        state.priceLog = cleanPriceLog(priceLog);
+      }
+    };
+  }
+
+  /* ---------- actions ---------- */
+
+  function onWriteError(err) {
+    if (err && err.code === 'invalid_argument' && state.mode === 'db') {
+      state.canWrite = false;
+      render();
+      toast('この画面では記録できません（閲覧のみ）');
+      return;
+    }
+    toast('保存できませんでした。もう一度タップしてください');
+  }
+
+  function visibleEvents() {
+    var from = state.scope === 'today' ? startOfDay() : 0;
+    return state.events.filter(function (e) { return e.t >= from; });
+  }
+
+  function sell(id) {
+    if (!state.canWrite) return;
+    if (!store) {
+      var q = { item: id, price: state.prices[id], t: Date.now() };
+      queue.push(q);
+      state.events.push({ id: 'q' + queue.length + '-' + q.t, item: q.item, price: q.price, t: q.t });
+      render();
+      try { if (navigator.vibrate) navigator.vibrate(12); } catch (e) {}
+      return;
+    }
+    try {
+      var r = store.add(id, state.prices[id]);
+      if (r && r.catch) r.catch(onWriteError);
+    } catch (e) { onWriteError(e); }
+    try { if (navigator.vibrate) navigator.vibrate(12); } catch (e) {}
+  }
+
+  function removeEvent(eid) {
+    if (!state.canWrite || !store) return;
+    try {
+      var r = store.remove(eid);
+      if (r && r.catch) r.catch(onWriteError);
+    } catch (e) { onWriteError(e); }
+  }
+
+  function undoLatest(id) {
+    var ev = visibleEvents();
+    for (var k = ev.length - 1; k >= 0; k--) {
+      if (ev[k].item === id) { removeEvent(ev[k].id); return; }
+    }
+  }
+
+  function savePrices() {
+    if (!store) return;
+    try {
+      var r = store.setPrices(Object.assign({}, state.prices));
+      if (r && r.catch) r.catch(onWriteError);
+    } catch (e) { onWriteError(e); }
+  }
+
+  /* ---------- build ---------- */
+
+  function build() {
+    $('#date').textContent = new Date().toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
+
+    var list = $('#items');
+    ITEMS.forEach(function (i) {
+      var li = document.createElement('li');
+      li.className = 'row';
+      li.dataset.id = i.id;
+      li.style.setProperty('--c', 'var(' + i.c + ')');
+      li.innerHTML =
+        '<svg class="skewer" viewBox="0 0 24 48" aria-hidden="true">' +
+        '<line class="stick" x1="12" y1="1" x2="12" y2="47"/>' +
+        '<circle cx="12" cy="11" r="6.5"/><circle cx="12" cy="24" r="6.5"/><circle cx="12" cy="37" r="6.5"/></svg>' +
+        '<div class="info"><div class="nm">' + i.name + '</div>' +
+        '<div class="sub pr"></div><div class="sub rv"></div></div>' +
+        '<div class="ctl">' +
+        '<button type="button" class="minus" data-act="minus" aria-label="' + i.name + 'を1つ減らす">−</button>' +
+        '<span class="n">0</span>' +
+        '<button type="button" class="plus" data-act="plus" aria-label="' + i.name + 'を1つ追加">+</button>' +
+        '</div><div class="bar"><i></i></div>';
+      list.appendChild(li);
+      refs[i.id] = {
+        pr: li.querySelector('.pr'), rv: li.querySelector('.rv'), n: li.querySelector('.n'),
+        minus: li.querySelector('.minus'), plus: li.querySelector('.plus'), bar: li.querySelector('.bar i')
+      };
+    });
+
+    var grid = $('#pgrid');
+    ITEMS.forEach(function (i) {
+      var row = document.createElement('div');
+      row.className = 'prow';
+      row.innerHTML =
+        '<label for="price-' + i.id + '">' + i.name + '</label>' +
+        '<span class="field">¥<input id="price-' + i.id + '" type="number" inputmode="numeric" min="0" max="99999" step="10"></span>';
+      grid.appendChild(row);
+      var input = row.querySelector('input');
+      refs[i.id].input = input;
+      input.addEventListener('change', function () {
+        var v = parseInt(input.value, 10);
+        if (!isFinite(v) || v < 0 || v > 99999) {
+          input.value = state.prices[i.id];
+          toast('0〜99999の数字で入力してください');
+          return;
+        }
+        if (v === state.prices[i.id]) {
+          if (pending && pending.id === i.id) clearPending(false);
+          return;
+        }
+        askPriceChange(i.id, v);
+      });
+    });
+  }
+
+  /* ---------- price change confirmation ---------- */
+
+  var pending = null;
+
+  function clearPending(revert) {
+    if (pending && revert) refs[pending.id].input.value = state.prices[pending.id];
+    pending = null;
+    $('#pconfirm').hidden = true;
+  }
+
+  function askPriceChange(id, v) {
+    if (pending && pending.id !== id) refs[pending.id].input.value = state.prices[pending.id];
+    pending = { id: id, v: v };
+    $('#pconfirm-msg').textContent =
+      BY[id].name + 'の価格を ' + yen(state.prices[id]) + ' から ' + yen(v) + ' に変更しますか？';
+    $('#pconfirm').hidden = false;
+  }
+
+  /* ---------- render ---------- */
+
+  function render() {
+    var ev = visibleEvents();
+    var cnt = {}, rev = {}, totalN = 0, totalR = 0, max = 1;
+    ITEMS.forEach(function (i) { cnt[i.id] = 0; rev[i.id] = 0; });
+    ev.forEach(function (e) { cnt[e.item]++; rev[e.item] += e.price; totalN++; totalR += e.price; });
+    ITEMS.forEach(function (i) { if (cnt[i.id] > max) max = cnt[i.id]; });
+
+    $('#total-rev').textContent = yen(totalR);
+    $('#total-n').textContent = totalN.toLocaleString('ja-JP');
+
+    ITEMS.forEach(function (i) {
+      var r = refs[i.id];
+      r.pr.textContent = yen(state.prices[i.id]);
+      r.rv.textContent = '小計 ' + yen(rev[i.id]);
+      r.n.textContent = cnt[i.id];
+      if (prevCount && cnt[i.id] > prevCount[i.id]) {
+        r.n.classList.add('bump');
+        (function (el) { setTimeout(function () { el.classList.remove('bump'); }, 160); })(r.n);
+      }
+      var waiting = state.mode === 'pending';
+      r.plus.disabled = !state.canWrite;
+      r.minus.disabled = !state.canWrite || waiting || cnt[i.id] === 0;
+      r.input.disabled = waiting;
+      r.bar.style.width = (cnt[i.id] / max * 100) + '%';
+      if (document.activeElement !== r.input && !(pending && pending.id === i.id)) r.input.value = state.prices[i.id];
+    });
+    prevCount = cnt;
+
+    $('#scope-today').setAttribute('aria-pressed', String(state.scope === 'today'));
+    $('#scope-all').setAttribute('aria-pressed', String(state.scope === 'all'));
+
+    var log = $('#log');
+    log.textContent = '';
+    ev.slice(-6).reverse().forEach(function (e) {
+      var li = document.createElement('li');
+      var t = document.createElement('span'); t.className = 't'; t.textContent = hhmm(e.t);
+      var nm = document.createElement('span'); nm.textContent = BY[e.item].name;
+      var pr = document.createElement('span'); pr.textContent = yen(e.price);
+      var b = document.createElement('button');
+      b.type = 'button'; b.textContent = '取消'; b.dataset.eid = e.id; b.disabled = !state.canWrite || state.mode === 'pending';
+      b.setAttribute('aria-label', hhmm(e.t) + ' ' + BY[e.item].name + 'の記録を取り消す');
+      li.appendChild(t); li.appendChild(nm); li.appendChild(pr); li.appendChild(b);
+      log.appendChild(li);
+    });
+    $('#log-empty').hidden = ev.length > 0;
+
+    var st = $('#status'), msg, kind = '';
+    if (state.mode === 'pending') { msg = '接続中…（記録はできます。接続後に保存されます）'; kind = 'warn'; }
+    else if (state.syncError) { msg = '同期が止まりました。ページを開き直してください'; kind = 'warn'; }
+    else if (state.mode === 'db' && !state.canWrite) { msg = '閲覧のみ（記録はできません）'; kind = 'warn'; }
+    else if (state.mode === 'db') { msg = '保存中。ほかの端末とも共有されます'; kind = 'ok'; }
+    else { msg = 'この端末のブラウザに保存されます（ほかの端末とは共有されません）'; kind = 'warn'; }
+    st.dataset.k = kind;
+    st.lastChild.textContent = msg;
+  }
+
+  /* ---------- summary text ---------- */
+
+  function summaryText() {
+    var ev = visibleEvents(), cnt = {}, rev = {}, n = 0, r = 0;
+    ITEMS.forEach(function (i) { cnt[i.id] = 0; rev[i.id] = 0; });
+    ev.forEach(function (e) { cnt[e.item]++; rev[e.item] += e.price; n++; r += e.price; });
+    var d = new Date().toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
+    var lines = ['団子屋 販売記録（' + (state.scope === 'today' ? d : '全日合計') + '）'];
+    ITEMS.forEach(function (i) { lines.push(i.name + ' ×' + cnt[i.id] + '　' + yen(rev[i.id])); });
+    lines.push('合計 ×' + n + '　' + yen(r));
+    var all = state.scope === 'all';
+    function stamp(t) {
+      var dt = new Date(t);
+      return (all ? (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' : '') + hhmm(t);
+    }
+    lines.push('', '【販売履歴】');
+    if (ev.length === 0) lines.push('（なし）');
+    ev.forEach(function (e) { lines.push(stamp(e.t) + ' ' + BY[e.item].name + ' ' + yen(e.price)); });
+    var from = state.scope === 'today' ? startOfDay() : 0;
+    var pl = state.priceLog.filter(function (x) { return x.t >= from; });
+    lines.push('', '【価格変更】');
+    if (pl.length === 0) lines.push('（なし）');
+    pl.forEach(function (x) {
+      lines.push(stamp(x.t) + ' ' + BY[x.item].name + ' ' + yen(x.from) + ' → ' + yen(x.to));
+    });
+    return lines.join('\n');
+  }
+
+  /* ---------- events ---------- */
+
+  function wire() {
+    $('#pc-yes').addEventListener('click', function () {
+      if (!pending) return;
+      var p = pending;
+      var oldPrice = state.prices[p.id];
+      state.prices[p.id] = p.v;
+      clearPending(false);
+      savePrices();
+      try {
+        var lr = store && store.logPrice(p.id, oldPrice, p.v);
+        if (lr && lr.catch) lr.catch(onWriteError);
+      } catch (e) { onWriteError(e); }
+      render();
+      toast(BY[p.id].name + 'を' + yen(p.v) + 'に変更しました');
+    });
+    $('#pc-no').addEventListener('click', function () { clearPending(true); });
+    $('#items').addEventListener('click', function (e) {
+      var btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      var id = btn.closest('.row').dataset.id;
+      if (btn.dataset.act === 'plus') sell(id); else undoLatest(id);
+    });
+    $('#log').addEventListener('click', function (e) {
+      var btn = e.target.closest('button[data-eid]');
+      if (btn) removeEvent(btn.dataset.eid);
+    });
+    function setScope(s) {
+      state.scope = s;
+      prevCount = null;
+      try { localStorage.setItem('dango-scope', s); } catch (e) {}
+      render();
+    }
+    $('#scope-today').addEventListener('click', function () { setScope('today'); });
+    $('#scope-all').addEventListener('click', function () { setScope('all'); });
+    $('#copy').addEventListener('click', function () {
+      var text = summaryText();
+      var box = $('#copybox');
+      function fallback() {
+        box.value = text; box.hidden = false; box.focus(); box.select();
+        toast('文章を選んでコピーしてください');
+      }
+      try {
+        navigator.clipboard.writeText(text).then(function () {
+          box.hidden = true;
+          toast('集計をコピーしました');
+        }, fallback);
+      } catch (e) { fallback(); }
+    });
+  }
+
+  /* ---------- boot ---------- */
+
+  async function boot() {
+    build();
+    wire();
+    render();
+
+    store = localStore();
+    state.mode = 'local';
+    state.canWrite = true;
+
+    try {
+      store.start(
+        function (evs) { state.events = cleanEvents(evs); render(); },
+        function (p) { applyPrices(p); render(); },
+        function () { state.syncError = true; render(); },
+        function (pl) { state.priceLog = cleanPriceLog(pl); render(); }
+      );
+    } catch (e) {
+      state.syncError = true;
+    }
+    var waiting = queue.splice(0);
+    if (waiting.length && state.canWrite) {
+      waiting.forEach(function (q) {
+        try {
+          var r = store.add(q.item, q.price, q.t);
+          if (r && r.catch) r.catch(onWriteError);
+        } catch (e) { onWriteError(e); }
+      });
+    } else if (waiting.length) {
+      toast('接続前の記録は、権限がないため保存されませんでした');
+    }
+    render();
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
