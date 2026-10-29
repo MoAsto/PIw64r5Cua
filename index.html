@@ -321,7 +321,7 @@ body[data-tab="stats"] .desk { display: none; }
     </div>
   </header>
 
-  <p class="banner" id="banner" role="alert" hidden>このブラウザでは記録を保存できません。ページを再読み込みすると、記録が消えます。プライベートブラウズを使っていないか確認してください。</p>
+  <p class="banner" id="banner" role="alert" hidden>Firebaseとの接続を確立しています...</p>
 
   <main class="desk">
     <section class="panel panel-order" aria-label="注文を受ける">
@@ -398,7 +398,7 @@ body[data-tab="stats"] .desk { display: none; }
 
     <div class="block card">
       <h3 class="sect-title">記録の管理</h3>
-      <p class="note">記録はこの端末のブラウザに保存され、ほかの端末とは共有されません。本番前に試した記録は、ここで消せます。</p>
+      <p class="note">記録はFirebaseクラウドデータベースに保存され、他の端末とリアルタイムで共有されます。</p>
       <button type="button" class="btn danger-line" id="reset">記録をすべて消去</button>
     </div>
   </section>
@@ -414,728 +414,721 @@ body[data-tab="stats"] .desk { display: none; }
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-<script>
-(function () {
-  'use strict';
+<!-- Firebase SDK (Modular CDN) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-  var MAXNUM = 12;
-  var LATE_MIN = 10; // 受け渡し待ちがこの分数を超えたら、経過時間を目立たせる
-  var ITEMS = [
-    { id: 'plain', name: 'プレーン', price: 150, c: '--f-plain' },
-    { id: 'mitarashi', name: 'みたらし', price: 150, c: '--f-mitarashi' },
-    { id: 'kinako', name: 'きなこ', price: 150, c: '--f-kinako' },
-    { id: 'shoyu', name: '醤油', price: 150, c: '--f-shoyu' },
-    { id: 'anko', name: 'あんこ', price: 150, c: '--f-anko' },
-    { id: 'matcha', name: '抹茶', price: 150, c: '--f-matcha' },
-    { id: 'choco', name: 'チョコ', price: 150, c: '--f-choco' },
-    { id: 'goma', name: '胡麻団子', price: 200, c: '--f-goma' }
-  ];
-  var BY = {};
-  ITEMS.forEach(function (i) { BY[i.id] = i; });
-
-  var K = {
-    events: 'dango-sales-v1',     // 旧版の1個ずつの記録（残っていれば集計に含める）
-    orders: 'dango-orders-v1',
-    prices: 'dango-prices-v1',
-    plog: 'dango-pricelog-v1',
-    draft: 'dango-draft-v1',
-    scope: 'dango-scope',
-    tab: 'dango-tab'
+  const firebaseConfig = {
+    apiKey: "AIzaSyA_5efKFR4KIi9dDzmjGUlYRbhEy62KWqE",
+    authDomain: "dango-sales.firebaseapp.com",
+    projectId: "dango-sales",
+    storageBucket: "dango-sales.firebasestorage.app",
+    messagingSenderId: "451653295480",
+    appId: "1:451653295480:web:420bcc34ba777b915c7c8d"
   };
 
-  var storageOk = true;
-  try { localStorage.setItem('dango-test', '1'); localStorage.removeItem('dango-test'); } catch (e) { storageOk = false; }
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const docRef = doc(db, "appData", "mainStore");
 
-  function load(key, fallback) {
-    try {
-      var raw = localStorage.getItem(key);
-      if (raw == null) return fallback;
-      var v = JSON.parse(raw);
-      return v == null ? fallback : v;
-    } catch (e) { return fallback; }
-  }
-  function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {} }
-  function getRaw(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
-  function setRaw(key, v) { try { localStorage.setItem(key, v); } catch (e) {} }
+  (function () {
+    'use strict';
 
-  var wideMQ = window.matchMedia('(min-width: 900px)');
-  var reduceMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
-  function isWide() { return wideMQ.matches; }
+    var MAXNUM = 12;
+    var LATE_MIN = 10;
+    var ITEMS = [
+      { id: 'plain', name: 'プレーン', price: 150, c: '--f-plain' },
+      { id: 'mitarashi', name: 'みたらし', price: 150, c: '--f-mitarashi' },
+      { id: 'kinako', name: 'きなこ', price: 150, c: '--f-kinako' },
+      { id: 'shoyu', name: '醤油', price: 150, c: '--f-shoyu' },
+      { id: 'anko', name: 'あんこ', price: 150, c: '--f-anko' },
+      { id: 'matcha', name: '抹茶', price: 150, c: '--f-matcha' },
+      { id: 'choco', name: 'チョコ', price: 150, c: '--f-choco' },
+      { id: 'goma', name: '胡麻団子', price: 200, c: '--f-goma' }
+    ];
+    var BY = {};
+    ITEMS.forEach(function (i) { BY[i.id] = i; });
 
-  /* ---------- state ---------- */
+    var wideMQ = window.matchMedia('(min-width: 900px)');
+    var reduceMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
+    function isWide() { return wideMQ.matches; }
 
-  var savedTab = getRaw(K.tab);
-  var state = {
-    events: [], orders: [], priceLog: [], prices: {}, draft: {},
-    pick: null,
-    scope: getRaw(K.scope) === 'all' ? 'all' : 'today',
-    tab: savedTab === 'hand' || savedTab === 'stats' ? savedTab : 'order'
-  };
+    var state = {
+      events: [], orders: [], priceLog: [], prices: {}, draft: {},
+      pick: null,
+      scope: 'today',
+      tab: 'order'
+    };
 
-  function toInt(v, lo, hi) {
-    var n = Math.round(Number(v));
-    if (!isFinite(n)) return null;
-    return n < lo || n > hi ? null : n;
-  }
+    function getDefaultPrices() {
+      var pr = {};
+      ITEMS.forEach(function (i) { pr[i.id] = i.price; });
+      return pr;
+    }
 
-  function cleanEvents(list) {
-    var out = [];
-    (Array.isArray(list) ? list : []).forEach(function (e) {
-      if (!e || !BY[e.item]) return;
-      var p = toInt(e.price, 0, 99999), t = Number(e.t);
-      if (p == null || !isFinite(t)) return;
-      out.push({ id: String(e.id), item: e.item, price: p, t: t });
-    });
-    return out;
-  }
+    function toInt(v, lo, hi) {
+      var n = Math.round(Number(v));
+      if (!isFinite(n)) return null;
+      return n < lo || n > hi ? null : n;
+    }
 
-  function cleanOrders(list) {
-    var out = [];
-    (Array.isArray(list) ? list : []).forEach(function (o) {
-      if (!o || !Array.isArray(o.lines)) return;
-      var num = toInt(o.num, 1, MAXNUM), t = Number(o.t);
-      if (num == null || !isFinite(t)) return;
-      var lines = [];
-      o.lines.forEach(function (l) {
-        if (!l || !BY[l.item]) return;
-        var q = toInt(l.qty, 1, 99), p = toInt(l.price, 0, 99999);
-        if (q != null && p != null) lines.push({ item: l.item, qty: q, price: p });
+    function cleanEvents(list) {
+      var out = [];
+      (Array.isArray(list) ? list : []).forEach(function (e) {
+        if (!e || !BY[e.item]) return;
+        var p = toInt(e.price, 0, 99999), t = Number(e.t);
+        if (p == null || !isFinite(t)) return;
+        out.push({ id: String(e.id), item: e.item, price: p, t: t });
       });
-      if (!lines.length) return;
-      var done = o.status === 'done';
-      out.push({ id: String(o.id), num: num, t: t, lines: lines, status: done ? 'done' : 'waiting', doneT: done && isFinite(Number(o.doneT)) ? Number(o.doneT) : null });
-    });
-    return out;
-  }
-
-  function cleanPriceLog(list) {
-    var out = [];
-    (Array.isArray(list) ? list : []).forEach(function (x) {
-      if (!x || !BY[x.item]) return;
-      var a = toInt(x.from, 0, 99999), b = toInt(x.to, 0, 99999), t = Number(x.t);
-      if (a == null || b == null || !isFinite(t)) return;
-      out.push({ id: String(x.id), item: x.item, from: a, to: b, t: t });
-    });
-    return out;
-  }
-
-  function cleanDraft(d) {
-    var out = {};
-    ITEMS.forEach(function (i) {
-      var q = d && typeof d === 'object' ? toInt(d[i.id], 0, 99) : null;
-      out[i.id] = q == null ? 0 : q;
-    });
-    return out;
-  }
-
-  function loadState() {
-    state.events = cleanEvents(load(K.events, []));
-    state.orders = cleanOrders(load(K.orders, []));
-    state.priceLog = cleanPriceLog(load(K.plog, []));
-    var pr = {}, saved = load(K.prices, null);
-    ITEMS.forEach(function (i) {
-      var v = saved && typeof saved === 'object' ? toInt(saved[i.id], 0, 99999) : null;
-      pr[i.id] = v == null ? i.price : v;
-    });
-    state.prices = pr;
-    state.draft = cleanDraft(load(K.draft, {}));
-  }
-
-  function saveAll() {
-    save(K.orders, state.orders);
-    save(K.prices, state.prices);
-    save(K.plog, state.priceLog);
-    save(K.draft, state.draft);
-  }
-
-  /* ---------- helpers ---------- */
-
-  function $(s) { return document.querySelector(s); }
-  function yen(n) { return '¥' + Number(n).toLocaleString('ja-JP'); }
-  function startOfDay() { var d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
-  function hhmm(t) {
-    var d = new Date(t);
-    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-  }
-  function fmtT(t) {
-    var d = new Date(t);
-    return t < startOfDay() ? (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hhmm(t) : hhmm(t);
-  }
-  function minutesAgo(t) { return Math.floor((Date.now() - t) / 60000); }
-  function ago(t) {
-    var m = minutesAgo(t);
-    if (m < 1) return 'いま受付';
-    if (m < 60) return m + '分前';
-    return Math.floor(m / 60) + '時間' + (m % 60) + '分前';
-  }
-  function uid(p) { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
-  function el(tag, cls, text) {
-    var e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (text != null) e.textContent = text;
-    return e;
-  }
-  function orderAmount(o) { return o.lines.reduce(function (s, l) { return s + l.qty * l.price; }, 0); }
-  function orderQty(o) { return o.lines.reduce(function (s, l) { return s + l.qty; }, 0); }
-  function orderText(o) { return o.lines.map(function (l) { return BY[l.item].name + '×' + l.qty; }).join(' '); }
-  function scopeFrom() { return state.scope === 'today' ? startOfDay() : 0; }
-
-  var toastTimer = null;
-  function toast(msg) {
-    var t = $('#toast');
-    t.textContent = msg;
-    t.hidden = false;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { t.hidden = true; }, 2600);
-  }
-
-  /* ---------- confirm dialog ---------- */
-
-  var dlgYes = null, dlgNo = null, dlgOpener = null;
-  function ask(msg, yesLabel, onYes, onNo, danger) {
-    if (dlgNo) { var prev = dlgNo; dlgYes = null; dlgNo = null; prev(); }
-    dlgOpener = document.activeElement;
-    $('#dlg-msg').textContent = msg;
-    var y = $('#dlg-yes');
-    y.textContent = yesLabel;
-    y.className = 'btn ' + (danger ? 'danger' : 'primary');
-    dlgYes = onYes;
-    dlgNo = onNo || function () {};
-    $('#scrim').hidden = false;
-    $('#dialog').hidden = false;
-    $('#dlg-no').focus();
-  }
-  function closeDialog(ok) {
-    var y = dlgYes, n = dlgNo, opener = dlgOpener;
-    dlgYes = null; dlgNo = null; dlgOpener = null;
-    $('#scrim').hidden = true;
-    $('#dialog').hidden = true;
-    if (opener && opener.focus && opener.tagName !== 'INPUT' && document.contains(opener)) { try { opener.focus(); } catch (e) {} }
-    if (ok) { if (y) y(); } else if (n) n();
-  }
-
-  /* ---------- numbers ---------- */
-
-  function waiting() {
-    return state.orders.filter(function (o) { return o.status === 'waiting'; }).sort(function (a, b) { return a.t - b.t; });
-  }
-  function usedMap() {
-    var m = {};
-    waiting().forEach(function (o) { m[o.num] = o; });
-    return m;
-  }
-  function lastNum() {
-    var last = 0, lt = -1;
-    state.orders.forEach(function (o) { if (o.t >= lt) { lt = o.t; last = o.num; } });
-    return last;
-  }
-  // 直前に使った番号の次から数え、12の次は1に戻る。使用中の番号は飛ばす。
-  function autoNext() {
-    var used = usedMap(), last = lastNum();
-    for (var k = 1; k <= MAXNUM; k++) {
-      var n = ((last - 1 + k) % MAXNUM) + 1;
-      if (!used[n]) return n;
-    }
-    return null;
-  }
-  function currentNum() {
-    var used = usedMap();
-    if (state.pick && !used[state.pick]) return state.pick;
-    return autoNext();
-  }
-  function draftQty() { return ITEMS.reduce(function (s, i) { return s + state.draft[i.id]; }, 0); }
-  function draftAmount() { return ITEMS.reduce(function (s, i) { return s + state.draft[i.id] * state.prices[i.id]; }, 0); }
-
-  /* ---------- actions ---------- */
-
-  function confirmOrder() {
-    var num = currentNum();
-    if (!num) { toast('番号がすべて使用中です。先に受け渡しを済ませてください'); return; }
-    if (draftQty() === 0) return;
-    var lines = [];
-    ITEMS.forEach(function (i) {
-      if (state.draft[i.id] > 0) lines.push({ item: i.id, qty: state.draft[i.id], price: state.prices[i.id] });
-    });
-    var o = { id: uid('o'), num: num, t: Date.now(), lines: lines, status: 'waiting', doneT: null };
-    state.orders.push(o);
-    state.draft = cleanDraft({});
-    state.pick = null;
-    saveAll();
-    render();
-    toast(num + '番で受け付けました（' + yen(orderAmount(o)) + '）');
-    try { if (navigator.vibrate) navigator.vibrate(20); } catch (e) {}
-  }
-
-  function findOrder(id) {
-    for (var k = 0; k < state.orders.length; k++) if (state.orders[k].id === id) return state.orders[k];
-    return null;
-  }
-
-  function handOver(id) {
-    var o = findOrder(id);
-    if (!o || o.status !== 'waiting') return;
-    o.status = 'done';
-    o.doneT = Date.now();
-    saveAll();
-    render();
-    toast(o.num + '番を渡しました。' + o.num + '番は使えます');
-  }
-
-  function restoreOrder(id) {
-    var o = findOrder(id);
-    if (!o || o.status !== 'done') return;
-    if (usedMap()[o.num]) { toast(o.num + '番はすでに別の注文で使われています'); return; }
-    o.status = 'waiting';
-    o.doneT = null;
-    saveAll();
-    render();
-  }
-
-  function cancelOrder(id) {
-    var o = findOrder(id);
-    if (!o) return;
-    ask(o.num + '番の注文（' + orderQty(o) + '個 ' + yen(orderAmount(o)) + '）を取り消しますか？売上の記録からも消えます。', '取り消す', function () {
-      state.orders = state.orders.filter(function (x) { return x.id !== id; });
-      saveAll();
-      render();
-      toast(o.num + '番の注文を取り消しました');
-    }, null, true);
-  }
-
-  function allDone() {
-    var w = waiting();
-    if (!w.length) return;
-    ask('受け渡し待ち' + w.length + '件を、すべて渡し済みにしますか？', 'すべて渡した', function () {
-      var now = Date.now();
-      state.orders.forEach(function (o) { if (o.status === 'waiting') { o.status = 'done'; o.doneT = now; } });
-      saveAll();
-      render();
-    });
-  }
-
-  function resetAll() {
-    ask('注文・販売・価格変更の記録をすべて消します。元に戻せません。価格の設定は残ります。', 'すべて消去', function () {
-      state.events = []; state.orders = []; state.priceLog = [];
-      state.draft = cleanDraft({}); state.pick = null;
-      save(K.events, []);
-      saveAll();
-      render();
-      toast('記録をすべて消去しました');
-    }, null, true);
-  }
-
-  function changeQty(id, d) {
-    var q = state.draft[id] + d;
-    if (q < 0 || q > 99) return;
-    state.draft[id] = q;
-    save(K.draft, state.draft);
-    renderEntry();
-    if (d > 0) {
-      var n = refs[id].n;
-      n.classList.add('bump');
-      setTimeout(function () { n.classList.remove('bump'); }, 160);
-      try { if (navigator.vibrate) navigator.vibrate(10); } catch (e) {}
-    }
-  }
-
-  function setTab(t) {
-    state.tab = t;
-    setRaw(K.tab, t);
-    render();
-    window.scrollTo(0, 0);
-  }
-
-  function showOrderCard(num) {
-    var card = document.querySelector('.ord[data-num="' + num + '"]');
-    if (!card) return;
-    card.scrollIntoView({ block: 'center', behavior: reduceMQ.matches ? 'auto' : 'smooth' });
-    card.classList.remove('flash');
-    void card.offsetWidth;
-    card.classList.add('flash');
-    setTimeout(function () { card.classList.remove('flash'); }, 1500);
-  }
-
-  /* ---------- build ---------- */
-
-  var refs = {}, brRefs = {}, pricePending = null;
-
-  function build() {
-    $('#date').textContent = new Date().toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
-
-    var strip = $('#strip');
-    for (var n = 1; n <= MAXNUM; n++) {
-      var b = el('button', 'chip', String(n));
-      b.type = 'button';
-      b.dataset.n = n;
-      strip.appendChild(b);
+      return out;
     }
 
-    var list = $('#items');
-    ITEMS.forEach(function (i) {
-      var li = document.createElement('li');
-      li.className = 'row';
-      li.dataset.id = i.id;
-      li.style.setProperty('--c', 'var(' + i.c + ')');
-      li.innerHTML =
-        '<svg class="skewer" viewBox="0 0 20 44" aria-hidden="true">' +
-        '<line class="stick" x1="10" y1="1" x2="10" y2="43"/>' +
-        '<circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="22" r="6.5"/><circle cx="10" cy="34" r="6.5"/></svg>' +
-        '<div class="info"><div class="nm">' + i.name + '</div><div class="pr"></div></div>' +
-        '<div class="ctl">' +
-        '<button type="button" class="minus" aria-label="' + i.name + 'を1つ減らす">−</button>' +
-        '<span class="n" aria-live="polite">0</span>' +
-        '<button type="button" class="plus">+</button>' +
-        '</div>';
-      list.appendChild(li);
-      refs[i.id] = { row: li, pr: li.querySelector('.pr'), n: li.querySelector('.n'), plus: li.querySelector('.plus') };
-    });
-
-    var br = $('#break');
-    ITEMS.forEach(function (i) {
-      var li = document.createElement('li');
-      li.className = 'br';
-      li.style.setProperty('--c', 'var(' + i.c + ')');
-      li.innerHTML = '<span class="nm2">' + i.name + '</span><span class="c"></span><span class="r"></span>' +
-        '<span class="track"><span class="fill"></span></span>';
-      br.appendChild(li);
-      brRefs[i.id] = { c: li.querySelector('.c'), r: li.querySelector('.r'), fill: li.querySelector('.fill') };
-    });
-
-    var grid = $('#pgrid');
-    ITEMS.forEach(function (i) {
-      var row = document.createElement('div');
-      row.className = 'prow';
-      row.innerHTML =
-        '<label for="price-' + i.id + '">' + i.name + '</label>' +
-        '<span class="field">¥<input id="price-' + i.id + '" type="number" inputmode="numeric" min="0" max="99999" step="10" aria-describedby="err-' + i.id + '"></span>' +
-        '<p class="err" id="err-' + i.id + '" hidden></p>';
-      grid.appendChild(row);
-      var input = row.querySelector('input'), err = row.querySelector('.err');
-      refs[i.id].input = input;
-      function setErr(msg) {
-        err.hidden = !msg;
-        err.textContent = msg || '';
-        input.setAttribute('aria-invalid', msg ? 'true' : 'false');
-      }
-      input.addEventListener('input', function () { setErr(''); });
-      input.addEventListener('change', function () {
-        var v = toInt(input.value, 0, 99999);
-        if (v == null || input.value.trim() === '') {
-          input.value = state.prices[i.id];
-          setErr('0〜99999の数字で入力してください');
-          return;
-        }
-        setErr('');
-        var old = state.prices[i.id];
-        if (v === old) return;
-        ask(i.name + 'の価格を ' + yen(old) + ' から ' + yen(v) + ' に変更しますか？', '変更する', function () {
-          pricePending = null;
-          var from = state.prices[i.id];
-          state.prices[i.id] = v;
-          state.priceLog.push({ id: uid('p'), item: i.id, from: from, to: v, t: Date.now() });
-          saveAll();
-          render();
-          toast(i.name + 'を' + yen(v) + 'に変更しました');
-        }, function () {
-          pricePending = null;
-          input.value = state.prices[i.id];
+    function cleanOrders(list) {
+      var out = [];
+      (Array.isArray(list) ? list : []).forEach(function (o) {
+        if (!o || !Array.isArray(o.lines)) return;
+        var num = toInt(o.num, 1, MAXNUM), t = Number(o.t);
+        if (num == null || !isFinite(t)) return;
+        var lines = [];
+        o.lines.forEach(function (l) {
+          if (!l || !BY[l.item]) return;
+          var q = toInt(l.qty, 1, 99), p = toInt(l.price, 0, 99999);
+          if (q != null && p != null) lines.push({ item: l.item, qty: q, price: p });
         });
-        pricePending = i.id;
+        if (!lines.length) return;
+        var done = o.status === 'done';
+        out.push({ id: String(o.id), num: num, t: t, lines: lines, status: done ? 'done' : 'waiting', doneT: done && isFinite(Number(o.doneT)) ? Number(o.doneT) : null });
       });
-    });
-  }
-
-  /* ---------- render ---------- */
-
-  function saleLines(from) {
-    var out = [];
-    state.events.forEach(function (e) { if (e.t >= from) out.push({ item: e.item, price: e.price, qty: 1 }); });
-    state.orders.forEach(function (o) {
-      if (o.t >= from) o.lines.forEach(function (l) { out.push({ item: l.item, price: l.price, qty: l.qty }); });
-    });
-    return out;
-  }
-
-  function renderChrome() {
-    document.body.dataset.tab = state.tab;
-    var wide = isWide();
-    $('#tab-order').setAttribute('aria-pressed', String(state.tab === 'order' || (wide && state.tab === 'hand')));
-    $('#tab-hand').setAttribute('aria-pressed', String(state.tab === 'hand' && !wide));
-    $('#tab-stats').setAttribute('aria-pressed', String(state.tab === 'stats'));
-    var w = waiting().length;
-    ['#badge', '#badge2'].forEach(function (s) {
-      var b = $(s);
-      b.textContent = w;
-      b.classList.toggle('zero', w === 0);
-    });
-    var n = 0, r = 0;
-    saleLines(startOfDay()).forEach(function (l) { n += l.qty; r += l.qty * l.price; });
-    $('#today-rev').textContent = yen(r);
-    $('#today-n').textContent = '今日 ' + n.toLocaleString('ja-JP') + '個';
-    $('#banner').hidden = storageOk;
-  }
-
-  function renderEntry() {
-    var used = usedMap(), cur = currentNum();
-
-    var chips = $('#strip').children;
-    for (var n = 1; n <= MAXNUM; n++) {
-      var c = chips[n - 1], o = used[n];
-      c.className = 'chip' + (o ? ' taken' : '') + (n === cur ? ' cur' : '');
-      c.setAttribute('aria-label', n + '番 ' + (o ? '使用中 ' + orderQty(o) + '個。押すと受け渡し待ちを見ます' : (n === cur ? '空き。いまの受付番号' : '空き。押すと受付番号にします')));
-      c.setAttribute('aria-pressed', String(n === cur));
+      return out;
     }
-    $('#curnum').textContent = cur || '–';
-    var hint = $('#curhint');
-    if (!cur) { hint.textContent = '12個すべて使用中です。渡し終えると使えます'; hint.className = 'pick-hint full'; }
-    else if (state.pick && state.pick === cur) { hint.textContent = '選んだ番号です。もう一度押すと自動に戻ります'; hint.className = 'pick-hint'; }
-    else { hint.textContent = '次の番号です。変えるときは、下の空いている札を押します'; hint.className = 'pick-hint'; }
 
-    ITEMS.forEach(function (i) {
-      var r = refs[i.id], q = state.draft[i.id];
-      r.pr.textContent = yen(state.prices[i.id]);
-      r.n.textContent = q;
-      r.row.classList.toggle('on', q > 0);
-      r.plus.disabled = q >= 99;
-      r.plus.setAttribute('aria-label', i.name + 'を1つ増やす（いま' + q + '個）');
-    });
-
-    var dq = draftQty();
-    $('#orderbar').hidden = dq === 0;
-    $('#ob-lines').textContent = dq + '個　' + ITEMS.filter(function (i) { return state.draft[i.id] > 0; })
-      .map(function (i) { return i.name + '×' + state.draft[i.id]; }).join('　');
-    $('#bar-ok').disabled = !cur;
-    $('#ok-label').textContent = cur ? cur + '番で確定' : '番号が空いていません';
-    $('#ok-amt').textContent = cur ? yen(draftAmount()) : '';
-  }
-
-  function renderHand() {
-    var w = waiting(), used = usedMap();
-    var wl = $('#waitlist');
-    wl.textContent = '';
-    w.forEach(function (o) {
-      var li = el('li', 'ord card');
-      li.dataset.num = o.num;
-      var no = el('div', 'no', String(o.num));
-      no.appendChild(el('small', null, '番'));
-      var body = el('div', 'body');
-      o.lines.forEach(function (l) {
-        var ln = el('div', 'ln');
-        ln.appendChild(el('span', null, BY[l.item].name));
-        ln.appendChild(el('span', null, '×' + l.qty));
-        body.appendChild(ln);
+    function cleanPriceLog(list) {
+      var out = [];
+      (Array.isArray(list) ? list : []).forEach(function (x) {
+        if (!x || !BY[x.item]) return;
+        var a = toInt(x.from, 0, 99999), b = toInt(x.to, 0, 99999), t = Number(x.t);
+        if (a == null || b == null || !isFinite(t)) return;
+        out.push({ id: String(x.id), item: x.item, from: a, to: b, t: t });
       });
-      var meta = el('div', 'meta');
-      var a = el('span', 'ago' + (minutesAgo(o.t) >= LATE_MIN ? ' late' : ''), ago(o.t));
-      a.dataset.t = o.t;
-      meta.appendChild(a);
-      meta.appendChild(el('span', null, fmtT(o.t) + ' 受付'));
-      meta.appendChild(el('span', null, orderQty(o) + '個 ' + yen(orderAmount(o))));
-      body.appendChild(meta);
-      var acts = el('div', 'acts');
-      var go = el('button', 'btn primary go', '渡した');
-      go.type = 'button'; go.dataset.act = 'go'; go.dataset.id = o.id;
-      go.setAttribute('aria-label', o.num + '番を渡した');
-      var del = el('button', 'btn quiet', '取消');
-      del.type = 'button'; del.dataset.act = 'del'; del.dataset.id = o.id;
-      del.setAttribute('aria-label', o.num + '番の注文を取り消す');
-      acts.appendChild(go); acts.appendChild(del);
-      li.appendChild(no); li.appendChild(body); li.appendChild(acts);
-      wl.appendChild(li);
-    });
-    $('#wait-empty').hidden = w.length > 0;
-    $('#alldone').hidden = w.length < 2;
-
-    var dl = $('#donelist');
-    dl.textContent = '';
-    var done = state.orders.filter(function (o) { return o.status === 'done'; })
-      .sort(function (a, b) { return (b.doneT || 0) - (a.doneT || 0); }).slice(0, 3);
-    done.forEach(function (o) {
-      var li = el('li');
-      li.appendChild(el('span', 'd-no', o.num + '番'));
-      li.appendChild(el('span', 'd-txt', orderText(o)));
-      li.appendChild(el('span', 'd-t', o.doneT ? fmtT(o.doneT) + ' 渡し' : ''));
-      var b = el('button', 'btn sm', '戻す');
-      b.type = 'button'; b.dataset.id = o.id;
-      b.disabled = !!used[o.num];
-      b.setAttribute('aria-label', o.num + '番を受け渡し待ちに戻す' + (used[o.num] ? '（この番号は使用中）' : ''));
-      li.appendChild(b);
-      dl.appendChild(li);
-    });
-    $('#done-empty').hidden = done.length > 0;
-  }
-
-  function renderStats() {
-    var cnt = {}, rev = {}, n = 0, r = 0, max = 0;
-    ITEMS.forEach(function (i) { cnt[i.id] = 0; rev[i.id] = 0; });
-    saleLines(scopeFrom()).forEach(function (l) {
-      cnt[l.item] += l.qty; rev[l.item] += l.qty * l.price; n += l.qty; r += l.qty * l.price;
-    });
-    ITEMS.forEach(function (i) { if (cnt[i.id] > max) max = cnt[i.id]; });
-    $('#total-rev').textContent = yen(r);
-    $('#total-n').textContent = n.toLocaleString('ja-JP') + '個';
-    $('#kpi-none').hidden = n > 0;
-    $('#scope-today').setAttribute('aria-pressed', String(state.scope === 'today'));
-    $('#scope-all').setAttribute('aria-pressed', String(state.scope === 'all'));
-    ITEMS.forEach(function (i) {
-      var b = brRefs[i.id];
-      b.c.textContent = cnt[i.id] + '個';
-      b.r.textContent = yen(rev[i.id]);
-      b.fill.style.width = max ? (cnt[i.id] / max * 100) + '%' : '0';
-      if (document.activeElement !== refs[i.id].input && pricePending !== i.id) refs[i.id].input.value = state.prices[i.id];
-    });
-  }
-
-  function render() {
-    renderChrome();
-    renderEntry();
-    renderHand();
-    renderStats();
-  }
-
-  function updateAgo() {
-    var list = document.querySelectorAll('.ago');
-    for (var k = 0; k < list.length; k++) {
-      var t = Number(list[k].dataset.t);
-      list[k].textContent = ago(t);
-      list[k].classList.toggle('late', minutesAgo(t) >= LATE_MIN);
+      return out;
     }
-  }
 
-  /* ---------- summary text ---------- */
-
-  function summaryText() {
-    var from = scopeFrom(), all = state.scope === 'all';
-    var cnt = {}, rev = {}, n = 0, r = 0;
-    ITEMS.forEach(function (i) { cnt[i.id] = 0; rev[i.id] = 0; });
-    saleLines(from).forEach(function (l) { cnt[l.item] += l.qty; rev[l.item] += l.qty * l.price; n += l.qty; r += l.qty * l.price; });
-    var d = new Date().toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
-    var L = ['団子屋 販売記録（' + (all ? '全日合計' : d) + '）'];
-    ITEMS.forEach(function (i) { L.push(i.name + ' ×' + cnt[i.id] + '　' + yen(rev[i.id])); });
-    L.push('合計 ×' + n + '　' + yen(r));
-
-    function stamp(t) {
-      var dt = new Date(t);
-      return (all ? (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' : '') + hhmm(t);
+    function cleanDraft(d) {
+      var out = {};
+      ITEMS.forEach(function (i) {
+        var q = d && typeof d === 'object' ? toInt(d[i.id], 0, 99) : null;
+        out[i.id] = q == null ? 0 : q;
+      });
+      return out;
     }
-    var rows = [];
-    state.events.forEach(function (e) {
-      if (e.t >= from) rows.push({ t: e.t, s: stamp(e.t) + ' ' + BY[e.item].name + '×1 ' + yen(e.price) });
-    });
-    state.orders.forEach(function (o) {
-      if (o.t < from) return;
-      var s = stamp(o.t) + ' ' + o.num + '番 ' + orderText(o) + ' ' + yen(orderAmount(o));
-      s += o.status === 'done' && o.doneT ? '（' + stamp(o.doneT) + ' 渡し）' : '（受け渡し前）';
-      rows.push({ t: o.t, s: s });
-    });
-    rows.sort(function (a, b) { return a.t - b.t; });
-    L.push('', '【注文履歴】');
-    if (!rows.length) L.push('（なし）');
-    rows.forEach(function (x) { L.push(x.s); });
 
-    L.push('', '【価格変更】');
-    var pl = state.priceLog.filter(function (x) { return x.t >= from; }).sort(function (a, b) { return a.t - b.t; });
-    if (!pl.length) L.push('（なし）');
-    pl.forEach(function (x) { L.push(stamp(x.t) + ' ' + BY[x.item].name + ' ' + yen(x.from) + ' → ' + yen(x.to)); });
-    return L.join('\n');
-  }
+    // Firestore への保存
+    function saveAll() {
+      var payload = {
+        events: state.events,
+        orders: state.orders,
+        priceLog: state.priceLog,
+        prices: state.prices,
+        draft: state.draft,
+        updatedAt: Date.now()
+      };
+      setDoc(docRef, payload).catch(function(err) {
+        console.error("Firestore保存エラー: ", err);
+        toast("データの保存に失敗しました");
+      });
+    }
 
-  /* ---------- events ---------- */
+    function $(s) { return document.querySelector(s); }
+    function yen(n) { return '¥' + Number(n).toLocaleString('ja-JP'); }
+    function startOfDay() { var d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
+    function hhmm(t) {
+      var d = new Date(t);
+      return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    }
+    function fmtT(t) {
+      var d = new Date(t);
+      return t < startOfDay() ? (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hhmm(t) : hhmm(t);
+    }
+    function minutesAgo(t) { return Math.floor((Date.now() - t) / 60000); }
+    function ago(t) {
+      var m = minutesAgo(t);
+      if (m < 1) return 'いま受付';
+      if (m < 60) return m + '分前';
+      return Math.floor(m / 60) + '時間' + (m % 60) + '分前';
+    }
+    function uid(p) { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+    function el(tag, cls, text) {
+      var e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text != null) e.textContent = text;
+      return e;
+    }
+    function orderAmount(o) { return o.lines.reduce(function (s, l) { return s + l.qty * l.price; }, 0); }
+    function orderQty(o) { return o.lines.reduce(function (s, l) { return s + l.qty; }, 0); }
+    function orderText(o) { return o.lines.map(function (l) { return BY[l.item].name + '×' + l.qty; }).join(' '); }
+    function scopeFrom() { return state.scope === 'today' ? startOfDay() : 0; }
 
-  function wire() {
-    $('#tab-order').addEventListener('click', function () { setTab('order'); });
-    $('#tab-hand').addEventListener('click', function () { setTab('hand'); });
-    $('#tab-stats').addEventListener('click', function () { setTab('stats'); });
-    $('#go-order').addEventListener('click', function () { setTab('order'); });
+    var toastTimer = null;
+    function toast(msg) {
+      var t = $('#toast');
+      t.textContent = msg;
+      t.hidden = false;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { t.hidden = true; }, 2600);
+    }
 
-    $('#strip').addEventListener('click', function (e) {
-      var b = e.target.closest('button[data-n]');
-      if (!b) return;
-      var n = Number(b.dataset.n);
-      if (usedMap()[n]) {
-        if (!isWide()) setTab('hand');
-        showOrderCard(n);
-        return;
+    var dlgYes = null, dlgNo = null, dlgOpener = null;
+    function ask(msg, yesLabel, onYes, onNo, danger) {
+      if (dlgNo) { var prev = dlgNo; dlgYes = null; dlgNo = null; prev(); }
+      dlgOpener = document.activeElement;
+      $('#dlg-msg').textContent = msg;
+      var y = $('#dlg-yes');
+      y.textContent = yesLabel;
+      y.className = 'btn ' + (danger ? 'danger' : 'primary');
+      dlgYes = onYes;
+      dlgNo = onNo || function () {};
+      $('#scrim').hidden = false;
+      $('#dialog').hidden = false;
+      $('#dlg-no').focus();
+    }
+    function closeDialog(ok) {
+      var y = dlgYes, n = dlgNo, opener = dlgOpener;
+      dlgYes = null; dlgNo = null; dlgOpener = null;
+      $('#scrim').hidden = true;
+      $('#dialog').hidden = true;
+      if (opener && opener.focus && opener.tagName !== 'INPUT' && document.contains(opener)) { try { opener.focus(); } catch (e) {} }
+      if (ok) { if (y) y(); } else if (n) n();
+    }
+
+    function waiting() {
+      return state.orders.filter(function (o) { return o.status === 'waiting'; }).sort(function (a, b) { return a.t - b.t; });
+    }
+    function usedMap() {
+      var m = {};
+      waiting().forEach(function (o) { m[o.num] = o; });
+      return m;
+    }
+    function lastNum() {
+      var last = 0, lt = -1;
+      state.orders.forEach(function (o) { if (o.t >= lt) { lt = o.t; last = o.num; } });
+      return last;
+    }
+    function autoNext() {
+      var used = usedMap(), last = lastNum();
+      for (var k = 1; k <= MAXNUM; k++) {
+        var n = ((last - 1 + k) % MAXNUM) + 1;
+        if (!used[n]) return n;
       }
-      state.pick = state.pick === n ? null : n;
-      renderEntry();
-    });
+      return null;
+    }
+    function currentNum() {
+      var used = usedMap();
+      if (state.pick && !used[state.pick]) return state.pick;
+      return autoNext();
+    }
+    function draftQty() { return ITEMS.reduce(function (s, i) { return s + state.draft[i.id]; }, 0); }
+    function draftAmount() { return ITEMS.reduce(function (s, i) { return s + state.draft[i.id] * state.prices[i.id]; }, 0); }
 
-    // 行のどこを押しても +1。「−」だけ -1。
-    $('#items').addEventListener('click', function (e) {
-      var row = e.target.closest('.row');
-      if (!row) return;
-      changeQty(row.dataset.id, e.target.closest('.minus') ? -1 : 1);
-    });
-    $('#bar-ok').addEventListener('click', confirmOrder);
-    $('#bar-clear').addEventListener('click', function () {
+    function confirmOrder() {
+      var num = currentNum();
+      if (!num) { toast('番号がすべて使用中です。先に受け渡しを済ませてください'); return; }
       if (draftQty() === 0) return;
+      var lines = [];
+      ITEMS.forEach(function (i) {
+        if (state.draft[i.id] > 0) lines.push({ item: i.id, qty: state.draft[i.id], price: state.prices[i.id] });
+      });
+      var o = { id: uid('o'), num: num, t: Date.now(), lines: lines, status: 'waiting', doneT: null };
+      state.orders.push(o);
       state.draft = cleanDraft({});
-      save(K.draft, state.draft);
+      state.pick = null;
+      saveAll();
+      render();
+      toast(num + '番で受け付けました（' + yen(orderAmount(o)) + '）');
+      try { if (navigator.vibrate) navigator.vibrate(20); } catch (e) {}
+    }
+
+    function findOrder(id) {
+      for (var k = 0; k < state.orders.length; k++) if (state.orders[k].id === id) return state.orders[k];
+      return null;
+    }
+
+    function handOver(id) {
+      var o = findOrder(id);
+      if (!o || o.status !== 'waiting') return;
+      o.status = 'done';
+      o.doneT = Date.now();
+      saveAll();
+      render();
+      toast(o.num + '番を渡しました。' + o.num + '番は使えます');
+    }
+
+    function restoreOrder(id) {
+      var o = findOrder(id);
+      if (!o || o.status !== 'done') return;
+      if (usedMap()[o.num]) { toast(o.num + '番はすでに別の注文で使われています'); return; }
+      o.status = 'waiting';
+      o.doneT = null;
+      saveAll();
+      render();
+    }
+
+    function cancelOrder(id) {
+      var o = findOrder(id);
+      if (!o) return;
+      ask(o.num + '番の注文（' + orderQty(o) + '個 ' + yen(orderAmount(o)) + '）を取り消しますか？売上の記録からも消えます。', '取り消す', function () {
+        state.orders = state.orders.filter(function (x) { return x.id !== id; });
+        saveAll();
+        render();
+        toast(o.num + '番の注文を取り消しました');
+      }, null, true);
+    }
+
+    function allDone() {
+      var w = waiting();
+      if (!w.length) return;
+      ask('受け渡し待ち' + w.length + '件を、すべて渡し済みにしますか？', 'すべて渡した', function () {
+        var now = Date.now();
+        state.orders.forEach(function (o) { if (o.status === 'waiting') { o.status = 'done'; o.doneT = now; } });
+        saveAll();
+        render();
+      });
+    }
+
+    function resetAll() {
+      ask('注文・販売・価格変更の記録をすべて消します。元に戻せません。価格の設定は残ります。', 'すべて消去', function () {
+        state.events = []; state.orders = []; state.priceLog = [];
+        state.draft = cleanDraft({}); state.pick = null;
+        saveAll();
+        render();
+        toast('記録をすべて消去しました');
+      }, null, true);
+    }
+
+    function changeQty(id, d) {
+      var q = state.draft[id] + d;
+      if (q < 0 || q > 99) return;
+      state.draft[id] = q;
+      saveAll();
       renderEntry();
-    });
-
-    $('#waitlist').addEventListener('click', function (e) {
-      var b = e.target.closest('button[data-act]');
-      if (!b) return;
-      if (b.dataset.act === 'go') handOver(b.dataset.id); else cancelOrder(b.dataset.id);
-    });
-    $('#donelist').addEventListener('click', function (e) {
-      var b = e.target.closest('button[data-id]');
-      if (b && !b.disabled) restoreOrder(b.dataset.id);
-    });
-    $('#alldone').addEventListener('click', allDone);
-    $('#reset').addEventListener('click', resetAll);
-
-    $('#dlg-yes').addEventListener('click', function () { closeDialog(true); });
-    $('#dlg-no').addEventListener('click', function () { closeDialog(false); });
-    $('#scrim').addEventListener('click', function () { closeDialog(false); });
-    document.addEventListener('keydown', function (e) {
-      if ($('#dialog').hidden) return;
-      if (e.key === 'Escape') { e.preventDefault(); closeDialog(false); }
-      if (e.key === 'Tab') {
-        var no = $('#dlg-no'), yes = $('#dlg-yes');
-        e.preventDefault();
-        (document.activeElement === no ? yes : no).focus();
+      if (d > 0) {
+        var n = refs[id].n;
+        n.classList.add('bump');
+        setTimeout(function () { n.classList.remove('bump'); }, 160);
+        try { if (navigator.vibrate) navigator.vibrate(10); } catch (e) {}
       }
-    });
+    }
 
-    function setScope(s) {
-      state.scope = s;
-      setRaw(K.scope, s);
+    function setTab(t) {
+      state.tab = t;
+      render();
+      window.scrollTo(0, 0);
+    }
+
+    function showOrderCard(num) {
+      var card = document.querySelector('.ord[data-num="' + num + '"]');
+      if (!card) return;
+      card.scrollIntoView({ block: 'center', behavior: reduceMQ.matches ? 'auto' : 'smooth' });
+      card.classList.remove('flash');
+      void card.offsetWidth;
+      card.classList.add('flash');
+      setTimeout(function () { card.classList.remove('flash'); }, 1500);
+    }
+
+    var refs = {}, brRefs = {}, pricePending = null;
+
+    function build() {
+      $('#date').textContent = new Date().toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
+
+      var strip = $('#strip');
+      for (var n = 1; n <= MAXNUM; n++) {
+        var b = el('button', 'chip', String(n));
+        b.type = 'button';
+        b.dataset.n = n;
+        strip.appendChild(b);
+      }
+
+      var list = $('#items');
+      ITEMS.forEach(function (i) {
+        var li = document.createElement('li');
+        li.className = 'row';
+        li.dataset.id = i.id;
+        li.style.setProperty('--c', 'var(' + i.c + ')');
+        li.innerHTML =
+          '<svg class="skewer" viewBox="0 0 20 44" aria-hidden="true">' +
+          '<line class="stick" x1="10" y1="1" x2="10" y2="43"/>' +
+          '<circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="22" r="6.5"/><circle cx="10" cy="34" r="6.5"/></svg>' +
+          '<div class="info"><div class="nm">' + i.name + '</div><div class="pr"></div></div>' +
+          '<div class="ctl">' +
+          '<button type="button" class="minus" aria-label="' + i.name + 'を1つ減らす">−</button>' +
+          '<span class="n" aria-live="polite">0</span>' +
+          '<button type="button" class="plus">+</button>' +
+          '</div>';
+        list.appendChild(li);
+        refs[i.id] = { row: li, pr: li.querySelector('.pr'), n: li.querySelector('.n'), plus: li.querySelector('.plus') };
+      });
+
+      var br = $('#break');
+      ITEMS.forEach(function (i) {
+        var li = document.createElement('li');
+        li.className = 'br';
+        li.style.setProperty('--c', 'var(' + i.c + ')');
+        li.innerHTML = '<span class="nm2">' + i.name + '</span><span class="c"></span><span class="r"></span>' +
+          '<span class="track"><span class="fill"></span></span>';
+        br.appendChild(li);
+        brRefs[i.id] = { c: li.querySelector('.c'), r: li.querySelector('.r'), fill: li.querySelector('.fill') };
+      });
+
+      var grid = $('#pgrid');
+      ITEMS.forEach(function (i) {
+        var row = document.createElement('div');
+        row.className = 'prow';
+        row.innerHTML =
+          '<label for="price-' + i.id + '">' + i.name + '</label>' +
+          '<span class="field">¥<input id="price-' + i.id + '" type="number" inputmode="numeric" min="0" max="99999" step="10" aria-describedby="err-' + i.id + '"></span>' +
+          '<p class="err" id="err-' + i.id + '" hidden></p>';
+        grid.appendChild(row);
+        var input = row.querySelector('input'), err = row.querySelector('.err');
+        refs[i.id].input = input;
+        function setErr(msg) {
+          err.hidden = !msg;
+          err.textContent = msg || '';
+          input.setAttribute('aria-invalid', msg ? 'true' : 'false');
+        }
+        input.addEventListener('input', function () { setErr(''); });
+        input.addEventListener('change', function () {
+          var v = toInt(input.value, 0, 99999);
+          if (v == null || input.value.trim() === '') {
+            input.value = state.prices[i.id];
+            setErr('0〜99999の数字で入力してください');
+            return;
+          }
+          setErr('');
+          var old = state.prices[i.id];
+          if (v === old) return;
+          ask(i.name + 'の価格を ' + yen(old) + ' から ' + yen(v) + ' に変更しますか？', '変更する', function () {
+            pricePending = null;
+            var from = state.prices[i.id];
+            state.prices[i.id] = v;
+            state.priceLog.push({ id: uid('p'), item: i.id, from: from, to: v, t: Date.now() });
+            saveAll();
+            render();
+            toast(i.name + 'を' + yen(v) + 'に変更しました');
+          }, function () {
+            pricePending = null;
+            input.value = state.prices[i.id];
+          });
+          pricePending = i.id;
+        });
+      });
+    }
+
+    function saleLines(from) {
+      var out = [];
+      state.events.forEach(function (e) { if (e.t >= from) out.push({ item: e.item, price: e.price, qty: 1 }); });
+      state.orders.forEach(function (o) {
+        if (o.t >= from) o.lines.forEach(function (l) { out.push({ item: l.item, price: l.price, qty: l.qty }); });
+      });
+      return out;
+    }
+
+    function renderChrome() {
+      document.body.dataset.tab = state.tab;
+      var wide = isWide();
+      $('#tab-order').setAttribute('aria-pressed', String(state.tab === 'order' || (wide && state.tab === 'hand')));
+      $('#tab-hand').setAttribute('aria-pressed', String(state.tab === 'hand' && !wide));
+      $('#tab-stats').setAttribute('aria-pressed', String(state.tab === 'stats'));
+      var w = waiting().length;
+      ['#badge', '#badge2'].forEach(function (s) {
+        var b = $(s);
+        b.textContent = w;
+        b.classList.toggle('zero', w === 0);
+      });
+      var n = 0, r = 0;
+      saleLines(startOfDay()).forEach(function (l) { n += l.qty; r += l.qty * l.price; });
+      $('#today-rev').textContent = yen(r);
+      $('#today-n').textContent = '今日 ' + n.toLocaleString('ja-JP') + '個';
+    }
+
+    function renderEntry() {
+      var used = usedMap(), cur = currentNum();
+
+      var chips = $('#strip').children;
+      for (var n = 1; n <= MAXNUM; n++) {
+        var c = chips[n - 1], o = used[n];
+        c.className = 'chip' + (o ? ' taken' : '') + (n === cur ? ' cur' : '');
+        c.setAttribute('aria-label', n + '番 ' + (o ? '使用中 ' + orderQty(o) + '個。押すと受け渡し待ちを見ます' : (n === cur ? '空き。いまの受付番号' : '空き。押すと受付番号にします')));
+        c.setAttribute('aria-pressed', String(n === cur));
+      }
+      $('#curnum').textContent = cur || '–';
+      var hint = $('#curhint');
+      if (!cur) { hint.textContent = '12個すべて使用中です。渡し終えると使えます'; hint.className = 'pick-hint full'; }
+      else if (state.pick && state.pick === cur) { hint.textContent = '選んだ番号です。もう一度押すと自動に戻ります'; hint.className = 'pick-hint'; }
+      else { hint.textContent = '次の番号です。変えるときは、下の空いている札を押します'; hint.className = 'pick-hint'; }
+
+      ITEMS.forEach(function (i) {
+        var r = refs[i.id], q = state.draft[i.id];
+        r.pr.textContent = yen(state.prices[i.id]);
+        r.n.textContent = q;
+        r.row.classList.toggle('on', q > 0);
+        r.plus.disabled = q >= 99;
+        r.plus.setAttribute('aria-label', i.name + 'を1つ増やす（いま' + q + '個）');
+      });
+
+      var dq = draftQty();
+      $('#orderbar').hidden = dq === 0;
+      $('#ob-lines').textContent = dq + '個 ' + ITEMS.filter(function (i) { return state.draft[i.id] > 0; })
+        .map(function (i) { return i.name + '×' + state.draft[i.id]; }).join(' ');
+      $('#bar-ok').disabled = !cur;
+      $('#ok-label').textContent = cur ? cur + '番で確定' : '番号が空いていません';
+      $('#ok-amt').textContent = cur ? yen(draftAmount()) : '';
+    }
+
+    function renderHand() {
+      var w = waiting(), used = usedMap();
+      var wl = $('#waitlist');
+      wl.textContent = '';
+      w.forEach(function (o) {
+        var li = el('li', 'ord card');
+        li.dataset.num = o.num;
+        var no = el('div', 'no', String(o.num));
+        no.appendChild(el('small', null, '番'));
+        var body = el('div', 'body');
+        o.lines.forEach(function (l) {
+          var ln = el('div', 'ln');
+          ln.appendChild(el('span', null, BY[l.item].name));
+          ln.appendChild(el('span', null, '×' + l.qty));
+          body.appendChild(ln);
+        });
+        var meta = el('div', 'meta');
+        var a = el('span', 'ago' + (minutesAgo(o.t) >= LATE_MIN ? ' late' : ''), ago(o.t));
+        a.dataset.t = o.t;
+        meta.appendChild(a);
+        meta.appendChild(el('span', null, fmtT(o.t) + ' 受付'));
+        meta.appendChild(el('span', null, orderQty(o) + '個 ' + yen(orderAmount(o))));
+        body.appendChild(meta);
+        var acts = el('div', 'acts');
+        var go = el('button', 'btn primary go', '渡した');
+        go.type = 'button'; go.dataset.act = 'go'; go.dataset.id = o.id;
+        go.setAttribute('aria-label', o.num + '番を渡した');
+        var del = el('button', 'btn quiet', '取消');
+        del.type = 'button'; del.dataset.act = 'del'; del.dataset.id = o.id;
+        del.setAttribute('aria-label', o.num + '番の注文を取り消す');
+        acts.appendChild(go); acts.appendChild(del);
+        li.appendChild(no); li.appendChild(body); li.appendChild(acts);
+        wl.appendChild(li);
+      });
+      $('#wait-empty').hidden = w.length > 0;
+      $('#alldone').hidden = w.length < 2;
+
+      var dl = $('#donelist');
+      dl.textContent = '';
+      var done = state.orders.filter(function (o) { return o.status === 'done'; })
+        .sort(function (a, b) { return (b.doneT || 0) - (a.doneT || 0); }).slice(0, 3);
+      done.forEach(function (o) {
+        var li = el('li');
+        li.appendChild(el('span', 'd-no', o.num + '番'));
+        li.appendChild(el('span', 'd-txt', orderText(o)));
+        li.appendChild(el('span', 'd-t', o.doneT ? fmtT(o.doneT) + ' 渡し' : ''));
+        var b = el('button', 'btn sm', '戻す');
+        b.type = 'button'; b.dataset.id = o.id;
+        b.disabled = !!used[o.num];
+        b.setAttribute('aria-label', o.num + '番を受け渡し待ちに戻す' + (used[o.num] ? '（この番号は使用中）' : ''));
+        li.appendChild(b);
+        dl.appendChild(li);
+      });
+      $('#done-empty').hidden = done.length > 0;
+    }
+
+    function renderStats() {
+      var cnt = {}, rev = {}, n = 0, r = 0, max = 0;
+      ITEMS.forEach(function (i) { cnt[i.id] = 0; rev[i.id] = 0; });
+      saleLines(scopeFrom()).forEach(function (l) {
+        cnt[l.item] += l.qty; rev[l.item] += l.qty * l.price; n += l.qty; r += l.qty * l.price;
+      });
+      ITEMS.forEach(function (i) { if (cnt[i.id] > max) max = cnt[i.id]; });
+      $('#total-rev').textContent = yen(r);
+      $('#total-n').textContent = n.toLocaleString('ja-JP') + '個';
+      $('#kpi-none').hidden = n > 0;
+      $('#scope-today').setAttribute('aria-pressed', String(state.scope === 'today'));
+      $('#scope-all').setAttribute('aria-pressed', String(state.scope === 'all'));
+      ITEMS.forEach(function (i) {
+        var b = brRefs[i.id];
+        b.c.textContent = cnt[i.id] + '個';
+        b.r.textContent = yen(rev[i.id]);
+        b.fill.style.width = max ? (cnt[i.id] / max * 100) + '%' : '0';
+        if (document.activeElement !== refs[i.id].input && pricePending !== i.id) refs[i.id].input.value = state.prices[i.id];
+      });
+    }
+
+    function render() {
+      renderChrome();
+      renderEntry();
+      renderHand();
       renderStats();
     }
-    $('#scope-today').addEventListener('click', function () { setScope('today'); });
-    $('#scope-all').addEventListener('click', function () { setScope('all'); });
 
-    $('#copy').addEventListener('click', function () {
-      var text = summaryText();
-      var box = $('#copybox');
-      function fallback() {
-        box.value = text; box.hidden = false; box.focus(); box.select();
-        toast('文章を選んでコピーしてください');
+    function updateAgo() {
+      var list = document.querySelectorAll('.ago');
+      for (var k = 0; k < list.length; k++) {
+        var t = Number(list[k].dataset.t);
+        list[k].textContent = ago(t);
+        list[k].classList.toggle('late', minutesAgo(t) >= LATE_MIN);
       }
-      try {
-        navigator.clipboard.writeText(text).then(function () {
-          box.hidden = true;
-          toast('集計をコピーしました');
-        }, fallback);
-      } catch (e) { fallback(); }
+    }
+
+    function summaryText() {
+      var from = scopeFrom(), all = state.scope === 'all';
+      var cnt = {}, rev = {}, n = 0, r = 0;
+      ITEMS.forEach(function (i) { cnt[i.id] = 0; rev[i.id] = 0; });
+      saleLines(from).forEach(function (l) { cnt[l.item] += l.qty; rev[l.item] += l.qty * l.price; n += l.qty; r += l.qty * l.price; });
+      var d = new Date().toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
+      var L = ['団子屋 販売記録（' + (all ? '全日合計' : d) + '）'];
+      ITEMS.forEach(function (i) { L.push(i.name + ' ×' + cnt[i.id] + ' ' + yen(rev[i.id])); });
+      L.push('合計 ×' + n + ' ' + yen(r));
+
+      function stamp(t) {
+        var dt = new Date(t);
+        return (all ? (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' : '') + hhmm(t);
+      }
+      var rows = [];
+      state.events.forEach(function (e) {
+        if (e.t >= from) rows.push({ t: e.t, s: stamp(e.t) + ' ' + BY[e.item].name + '×1 ' + yen(e.price) });
+      });
+      state.orders.forEach(function (o) {
+        if (o.t < from) return;
+        var s = stamp(o.t) + ' ' + o.num + '番 ' + orderText(o) + ' ' + yen(orderAmount(o));
+        s += o.status === 'done' && o.doneT ? '（' + stamp(o.doneT) + ' 渡し）' : '（受け渡し前）';
+        rows.push({ t: o.t, s: s });
+      });
+      rows.sort(function (a, b) { return a.t - b.t; });
+      L.push('', '【注文履歴】');
+      if (!rows.length) L.push('（なし）');
+      rows.forEach(function (x) { L.push(x.s); });
+
+      L.push('', '【価格変更】');
+      var pl = state.priceLog.filter(function (x) { return x.t >= from; }).sort(function (a, b) { return a.t - b.t; });
+      if (!pl.length) L.push('（なし）');
+      pl.forEach(function (x) { L.push(stamp(x.t) + ' ' + BY[x.item].name + ' ' + yen(x.from) + ' → ' + yen(x.to)); });
+      return L.join('\n');
+    }
+
+    function wire() {
+      $('#tab-order').addEventListener('click', function () { setTab('order'); });
+      $('#tab-hand').addEventListener('click', function () { setTab('hand'); });
+      $('#tab-stats').addEventListener('click', function () { setTab('stats'); });
+      $('#go-order').addEventListener('click', function () { setTab('order'); });
+
+      $('#strip').addEventListener('click', function (e) {
+        var b = e.target.closest('button[data-n]');
+        if (!b) return;
+        var n = Number(b.dataset.n);
+        if (usedMap()[n]) {
+          if (!isWide()) setTab('hand');
+          showOrderCard(n);
+          return;
+        }
+        state.pick = state.pick === n ? null : n;
+        renderEntry();
+      });
+
+      $('#items').addEventListener('click', function (e) {
+        var row = e.target.closest('.row');
+        if (!row) return;
+        changeQty(row.dataset.id, e.target.closest('.minus') ? -1 : 1);
+      });
+      $('#bar-ok').addEventListener('click', confirmOrder);
+      $('#bar-clear').addEventListener('click', function () {
+        if (draftQty() === 0) return;
+        state.draft = cleanDraft({});
+        saveAll();
+        renderEntry();
+      });
+
+      $('#waitlist').addEventListener('click', function (e) {
+        var b = e.target.closest('button[data-act]');
+        if (!b) return;
+        if (b.dataset.act === 'go') handOver(b.dataset.id); else cancelOrder(b.dataset.id);
+      });
+      $('#donelist').addEventListener('click', function (e) {
+        var b = e.target.closest('button[data-id]');
+        if (b && !b.disabled) restoreOrder(b.dataset.id);
+      });
+      $('#alldone').addEventListener('click', allDone);
+      $('#reset').addEventListener('click', resetAll);
+
+      $('#dlg-yes').addEventListener('click', function () { closeDialog(true); });
+      $('#dlg-no').addEventListener('click', function () { closeDialog(false); });
+      $('#scrim').addEventListener('click', function () { closeDialog(false); });
+      document.addEventListener('keydown', function (e) {
+        if ($('#dialog').hidden) return;
+        if (e.key === 'Escape') { e.preventDefault(); closeDialog(false); }
+        if (e.key === 'Tab') {
+          var no = $('#dlg-no'), yes = $('#dlg-yes');
+          e.preventDefault();
+          (document.activeElement === no ? yes : no).focus();
+        }
+      });
+
+      function setScope(s) {
+        state.scope = s;
+        renderStats();
+      }
+      $('#scope-today').addEventListener('click', function () { setScope('today'); });
+      $('#scope-all').addEventListener('click', function () { setScope('all'); });
+
+      $('#copy').addEventListener('click', function () {
+        var text = summaryText();
+        var box = $('#copybox');
+        function fallback() {
+          box.value = text; box.hidden = false; box.focus(); box.select();
+          toast('文章を選んでコピーしてください');
+        }
+        try {
+          navigator.clipboard.writeText(text).then(function () {
+            box.hidden = true;
+            toast('集計をコピーしました');
+          }, fallback);
+        } catch (e) { fallback(); }
+      });
+
+      if (wideMQ.addEventListener) wideMQ.addEventListener('change', render); else if (wideMQ.addListener) wideMQ.addListener(render);
+      setInterval(updateAgo, 30000);
+    }
+
+    build();
+    wire();
+
+    // Firestore からリアルタイムでデータを同期
+    onSnapshot(docRef, function(docSnap) {
+      if (docSnap.exists()) {
+        var data = docSnap.data();
+        state.events = cleanEvents(data.events);
+        state.orders = cleanOrders(data.orders);
+        state.priceLog = cleanPriceLog(data.priceLog);
+        
+        var pr = {}, saved = data.prices;
+        ITEMS.forEach(function (i) {
+          var v = saved && typeof saved === 'object' ? toInt(saved[i.id], 0, 99999) : null;
+          pr[i.id] = v == null ? i.price : v;
+        });
+        state.prices = pr;
+        state.draft = cleanDraft(data.draft);
+      } else {
+        // 初回起動時などのドキュメント未作成時
+        state.prices = getDefaultPrices();
+        state.draft = cleanDraft({});
+        saveAll();
+      }
+      $('#banner').hidden = true;
+      render();
+    }, function(error) {
+      console.error("Firestore監視エラー: ", error);
+      $('#banner').textContent = "Firebaseとの接続に失敗しました。";
+      $('#banner').hidden = false;
     });
 
-    // 同じ端末の別タブでの変更や、画面を開き直したときに内容をそろえる
-    window.addEventListener('storage', function () { loadState(); render(); });
-    document.addEventListener('visibilitychange', function () { if (!document.hidden) { loadState(); render(); } });
-    if (wideMQ.addEventListener) wideMQ.addEventListener('change', render); else if (wideMQ.addListener) wideMQ.addListener(render);
-    setInterval(updateAgo, 30000);
-  }
-
-  loadState();
-  build();
-  wire();
-  render();
-})();
+  })();
 </script>
 </body>
-</script>
 </html>
